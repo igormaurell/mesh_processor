@@ -6,8 +6,6 @@ from matplotlib import pyplot, colors
 
 from random import randint
 
-import math
-
 import argparse
 
 from tqdm import tqdm
@@ -68,7 +66,9 @@ vertex_graph = None
 feature_vertexes_distance = None
 
 def distance_points(p1, p2):
-    return math.sqrt((p1[0] - p2[0])**2 + (p1[1] - p2[1])**2 + (p1[2] - p2[2])**2)
+    p1a = np.array(list(p1)[0:3])
+    p2a = np.array(list(p2)[0:3])
+    return np.linalg.norm(p2a - p1a, ord=2)
 
 def distance_point_sphere(point, surface):
     center = surface['location']
@@ -77,7 +77,11 @@ def distance_point_sphere(point, surface):
     return d
 
 def distance_point_plane(point, surface):
-    pass
+    x0,y0,z0 = list(point)[0:3]
+    a,b,c,d = surface['coefficients']
+    normal = np.array([a, b, c])
+    return abs(a*x0 + b*y0 + c*z0 + d)/np.linalg.norm(normal, ord = 2)
+
 
 def distance_point_torus(point, surface):
     pass
@@ -89,7 +93,11 @@ def distance_point_cone(point, surface):
     pass
 
 def distance_point_line(point, curve):
-    pass
+    p1 = np.array(list(curve['location'])[0:3])
+    v = np.array(list(curve['direction'])[0:3])
+    p2 = np.array(list(point)[0:3])
+    cp = np.cross(v,(p2-p1))
+    return np.linalg.norm(cp, ord=2)/np.linalg.norm(v, ord=2)
 
 def distance_point_circle(point, curve):
     pass
@@ -289,4 +297,5 @@ if __name__ == '__main__':
     # Show the plot to the screen
     pyplot.show()
 
+    
     
