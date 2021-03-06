@@ -87,7 +87,16 @@ def distance_point_torus(point, surface):
     pass
 
 def distance_point_cylinder(point, surface):
-    pass
+    p1 = np.array(list(surface['location'])[0:3])
+    v = np.array(list(surface['z_axis'])[0:3])
+    p2 = np.array(list(point)[0:3])
+    radius = surface['radius']
+
+    d = np.cross(v,(p2-p1))
+
+    p2_p = p2 - d
+
+    return distance_points(p2, p2_p) - radius
 
 def distance_point_cone(point, surface):
     pass
