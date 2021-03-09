@@ -6,6 +6,8 @@ from matplotlib import pyplot, colors
 
 from random import randint
 
+from math import sqrt
+
 import argparse
 
 from tqdm import tqdm
@@ -65,51 +67,82 @@ vertex_graph = None
 
 feature_vertexes_distance = None
 
-def distance_points(p1, p2):
-    p1a = np.array(list(p1)[0:3])
-    p2a = np.array(list(p2)[0:3])
-    return np.linalg.norm(p2a - p1a, ord=2)
+def distance_points(A, B):
+    AB = B - A
+    return np.linalg.norm(AB, ord=2)
+
+
+def distance_point_line(point, curve):
+    A = np.array(list(curve['location'])[0:3])
+    v = np.array(list(curve['direction'])[0:3])
+    P = np.array(list(point)[0:3])
+    AP = P - A
+    return np.linalg.norm(np.cross(v, AP), ord=2)/np.linalg.norm(v, ord=2)
+
+def distance_point_circle(point, curve):
+    A = np.array(list(curve['location'])[0:3])
+    n = np.array(list(curve['z_axis'])[0:3])
+    P = np.array(list(point)[0:3])
+    radius = curve['radius']
+
+    AP = P - A
+    dist_point_plane = np.dot(AP, n)/np.linalg.norm(n, ord=2)
+
+    P_p = P - dist_point_plane*n/np.linalg.norm(n, ord=2)
+    dist_pointproj_center = np.linalg.norm(P_p - A, ord=2)
+    if dist_pointproj_center > radius:
+        a = dist_pointproj_center - radius
+        b = np.linalg.norm(P - P_p, ord=2)
+        return sqrt(a**2 + b**2)
+    
+    return abs(dist_point_plane)
+
 
 def distance_point_sphere(point, surface):
-    center = surface['location']
+    A = np.array(list(curve['location'])[0:3])
+    P = np.array(list(point)[0:3])
     radius = surface['radius']
-    d = distance_points(point, center) - radius
-    return d
+    return distance_points(P, A) - radius
+
 
 def distance_point_plane(point, surface):
-    x0,y0,z0 = list(point)[0:3]
+    P = list(point)[0:3]
     a,b,c,d = surface['coefficients']
-    normal = np.array([a, b, c])
-    return abs(a*x0 + b*y0 + c*z0 + d)/np.linalg.norm(normal, ord = 2)
+    n = np.array([a, b, c])
+    return abs(a*P[0] + b*P[1] + c*P[2] + d)/np.linalg.norm(n, ord = 2)
 
 
 def distance_point_torus(point, surface):
     pass
 
 def distance_point_cylinder(point, surface):
-    p1 = np.array(list(surface['location'])[0:3])
-    v = np.array(list(surface['z_axis'])[0:3])
-    p2 = np.array(list(point)[0:3])
     radius = surface['radius']
-
-    d = np.cross(v,(p2-p1))
-
-    p2_p = p2 - d
-
-    return distance_points(p2, p2_p) - radius
+    surface['direction'] = surface['z_axis']
+    return distance_point_line(point, surface) - radius
 
 def distance_point_cone(point, surface):
-    pass
+    A = np.array(list(surface['location'])[0:3])
+    v = np.array(list(surface['z_axis'])[0:3])
+    B = np.array(list(surface['apex'])[0:3])
+    P = np.array(list(point)[0:3])
+    radius = surface['radius']
 
-def distance_point_line(point, curve):
-    p1 = np.array(list(curve['location'])[0:3])
-    v = np.array(list(curve['direction'])[0:3])
-    p2 = np.array(list(point)[0:3])
-    cp = np.cross(v,(p2-p1))
-    return np.linalg.norm(cp, ord=2)/np.linalg.norm(v, ord=2)
+    h = distance_points(A, B)
 
-def distance_point_circle(point, curve):
-    pass
+    AP = P - A
+    P_p = A + np.dot(AP, v)/np.dot(v, v) * v
+
+    dist_AP = distance_points(P_p, A)
+    dist_BP = distance_points(P_p, B)
+
+    if dist_BP > dist_AP and dist_BP >= h:
+        return distance_point_circle(point, surface)
+    elif dist_AP > dist_BP and dist_AP >= h:
+        return distance_points(P, B)
+
+    r = radius*dist_BP/h
+
+    return distance_points(P, P_p) - r
 
 
 def vertex_processor(vertex):
@@ -305,6 +338,3 @@ if __name__ == '__main__':
 
     # Show the plot to the screen
     pyplot.show()
-
-    
-    
