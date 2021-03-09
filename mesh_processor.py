@@ -76,7 +76,9 @@ def distance_point_line(point, curve):
     A = np.array(list(curve['location'])[0:3])
     v = np.array(list(curve['direction'])[0:3])
     P = np.array(list(point)[0:3])
+    #AP vector
     AP = P - A
+    #equation to calculate distance between point and line using a direction vector
     return np.linalg.norm(np.cross(v, AP), ord=2)/np.linalg.norm(v, ord=2)
 
 def distance_point_circle(point, curve):
@@ -86,15 +88,19 @@ def distance_point_circle(point, curve):
     radius = curve['radius']
 
     AP = P - A
+    #orthogonal distance between point and circle plane
     dist_point_plane = np.dot(AP, n)/np.linalg.norm(n, ord=2)
 
+    #projection P in the circle plane and calculating the distance to the center
     P_p = P - dist_point_plane*n/np.linalg.norm(n, ord=2)
     dist_pointproj_center = np.linalg.norm(P_p - A, ord=2)
+    #if point is outside the circle arc, the distance to the curve is used 
     if dist_pointproj_center > radius:
         a = dist_pointproj_center - radius
         b = np.linalg.norm(P - P_p, ord=2)
         return sqrt(a**2 + b**2)
     
+    #if not, the orthogonal distance to the circle plane is used
     return abs(dist_point_plane)
 
 
@@ -102,6 +108,7 @@ def distance_point_sphere(point, surface):
     A = np.array(list(curve['location'])[0:3])
     P = np.array(list(point)[0:3])
     radius = surface['radius']
+    #simple, distance from point to the center minus the sphere radius
     return distance_points(P, A) - radius
 
 
@@ -109,6 +116,7 @@ def distance_point_plane(point, surface):
     P = list(point)[0:3]
     a,b,c,d = surface['coefficients']
     n = np.array([a, b, c])
+    #equation to calculate the point-plane distance (dot product + distance from origin)
     return abs(a*P[0] + b*P[1] + c*P[2] + d)/np.linalg.norm(n, ord = 2)
 
 
@@ -121,14 +129,19 @@ def distance_point_torus(point, surface):
     radius = (max_radius - min_radius)/2
 
     AP = P - A
+    #orthogonal distance to the torus plane 
     h = np.dot(AP, n)/np.linalg.norm(n, ord = 2)
 
     line = surface
     line['direction'] = surface['z_axis']
+    #orthogonal distance to the revolution axis line 
     d = distance_point_line(point, line)
 
+    #projecting the point in the torus plane
     P_p = P - h*n/np.linalg.norm(n, ord=2)
+    #getting the direction vector, using center as origin, to the point projected
     v = (P_p - A)/np.linalg.norm((P_p - A), ord=2)
+    #calculating the center of circle in the direction of the input point
     B = (min_radius + radius)*v + A
 
     return distance_points(B, P) - radius
@@ -137,6 +150,7 @@ def distance_point_torus(point, surface):
 def distance_point_cylinder(point, surface):
     radius = surface['radius']
     surface['direction'] = surface['z_axis']
+    #simple distance from point to the revolution axis line minus radius
     return distance_point_line(point, surface) - radius
 
 def distance_point_cone(point, surface):
@@ -146,21 +160,29 @@ def distance_point_cone(point, surface):
     P = np.array(list(point)[0:3])
     radius = surface['radius']
 
+    #height of cone
     h = distance_points(A, B)
 
     AP = P - A
+    #point projected in the revolution axis line
     P_p = A + np.dot(AP, v)/np.dot(v, v) * v
 
+    #distance from center of base to point projected
     dist_AP = distance_points(P_p, A)
+    #distance from apex to the point projected
     dist_BP = distance_points(P_p, B)
 
+    #if point is below the center of base, return the distance to the circle base 
     if dist_BP > dist_AP and dist_BP >= h:
         return distance_point_circle(point, surface)
     elif dist_AP > dist_BP and dist_AP >= h:
+    #if point is above the apex, return the distance from point to apex
         return distance_points(P, B)
 
+    #if not, calculate the radius of the circle in this point height 
     r = radius*dist_BP/h
 
+    #distance from point to the point projected in the revolution axis line minus the current radius
     return distance_points(P, P_p) - r
 
 
