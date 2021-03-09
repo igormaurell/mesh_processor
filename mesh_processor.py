@@ -113,7 +113,26 @@ def distance_point_plane(point, surface):
 
 
 def distance_point_torus(point, surface):
-    pass
+    A = np.array(list(surface['location'])[0:3])
+    n = np.array(list(surface['z_axis'])[0:3])
+    P = np.array(list(point)[0:3])
+    max_radius = surface['max_radius']
+    min_radius = surface['min_radius']
+    radius = (max_radius - min_radius)/2
+
+    AP = P - A
+    h = np.dot(AP, n)/np.linalg.norm(n, ord = 2)
+
+    line = surface
+    line['direction'] = surface['z_axis']
+    d = distance_point_line(point, line)
+
+    P_p = P - h*n/np.linalg.norm(n, ord=2)
+    v = (P_p - A)/np.linalg.norm((P_p - A), ord=2)
+    B = (min_radius + radius)*v + A
+
+    return distance_points(B, P) - radius
+
 
 def distance_point_cylinder(point, surface):
     radius = surface['radius']
