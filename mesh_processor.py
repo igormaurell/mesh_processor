@@ -127,7 +127,7 @@ def distance_point_plane(point, surface):
     P = np.array(list(point)[0:3])
     AP = P - A
     #orthogonal distance between point and plane
-    return np.dot(AP, n)/np.linalg.norm(n, ord=2)
+    return abs(np.dot(AP, n)/np.linalg.norm(n, ord=2))
 
 
 def distance_point_torus(point, surface):
@@ -185,11 +185,10 @@ def distance_point_cone(point, surface):
     #if point is below the center of base, return the distance to the circle base line
     if dist_BP > dist_AP and dist_BP >= h:
         AP = P - A
-        #orthogonal distance between point and circle plane
-        dist_point_plane = distance_point_plane(point, surface)
+        signal_dist_point_plane = np.dot(AP, v)/np.linalg.norm(v, ord=2)
 
         #projection P in the circle plane and calculating the distance to the center
-        P_p = P - dist_point_plane*v/np.linalg.norm(v, ord=2)
+        P_p = P - signal_dist_point_plane*v/np.linalg.norm(v, ord=2)
         dist_pointproj_center = np.linalg.norm(P_p - A, ord=2)
         #if point is outside the circle arc, the distance to the curve is used 
         if dist_pointproj_center > radius:
@@ -199,7 +198,7 @@ def distance_point_cone(point, surface):
             return sqrt(a**2 + b**2)
         
         #if not, the orthogonal distance to the circle plane is used
-        return abs(dist_point_plane)
+        return abs(signal_dist_point_plane)
     #if point is above the apex, return the distance from point to apex
     elif dist_AP > dist_BP and dist_AP >= h:
         return distance_points(P, B)
@@ -231,7 +230,6 @@ def mount_graph():
 
         vertex_graph[face[2]].append(face[0])
         vertex_graph[face[2]].append(face[1])
-    print(len(vertex_graph))
     print('Done.')
 
 def feature_vertex_matching():
@@ -250,8 +248,6 @@ def feature_vertex_matching():
                 do = distance_points(np.array(list(vertex)[0:3]), np.array(list(feature['location'])[0:3]))
                 #index, distance to surface, distance to origin
                 feature_vertexes_distance[i][j] = (ds, do)
-    print(len(feature_vertexes_distance[0]))
-    print(len(feature_vertexes_distance[1]))
     print('Done.')
 
 def dfsUtil(vertexes_dict, v, ds, visited, cc, ds_acc):
@@ -267,7 +263,6 @@ def dfsUtil(vertexes_dict, v, ds, visited, cc, ds_acc):
     return cc, ds_acc
 
 def found_best_connected_component(feature_index, vertexes_dict):
-    print(feature_index, len(vertexes_dict))
     visited = [False] * len(vertex_graph)
     components = []
     distances = []
@@ -279,8 +274,9 @@ def found_best_connected_component(feature_index, vertexes_dict):
             distances.append((ds/len(component), do/len(component)))
     
     #verifica qual a melhor componente
-    components.sort(key=len)
     if len(components) > 0:
+        components.sort(key=len)
+        print(feature_index, len(components))
         return components[-1]
     else:
         return []
@@ -322,7 +318,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Mesh Processor.')
     parser.add_argument('input', type=str, help='input file in .ply.')
     # parser.add_argument('output', type=str, help='output folder.')
-    parser.add_argument('--distance_threshold', type = float, default = 1, help='distance threshold to consider a vertex as possible inlier of a feature.')
+    parser.add_argument('--distance_threshold', type = float, default = 0.1, help='distance threshold to consider a vertex as possible inlier of a feature.')
     parser.add_argument('--features_yaml', type = str, default='', help='load features from a yaml file.')
     # parser.add_argument('--centralize', type = bool, default=True, help='bool to centralize or not.')
     # parser.add_argument('--align', type = bool, default=True, help='bool to canonical alignment or not.')
