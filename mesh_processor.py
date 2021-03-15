@@ -12,6 +12,10 @@ import argparse
 
 from tqdm import tqdm
 
+import pywavefront
+
+import yaml
+
 import sys
 sys.setrecursionlimit(10000)
 
@@ -60,6 +64,8 @@ sys.setrecursionlimit(10000)
 
 # features = [sphere1, sphere2]
 
+features = None
+
 mesh_vertexes = None
 mesh_faces = None
 
@@ -67,15 +73,12 @@ vertex_graph = None
 
 feature_vertexes_distance = None
 
-distance_functions = {
-    'line': distance_point_line,
-    'circle': distance_point_circle,
-    'sphere': distance_point_sphere,
-    'plane': distance_point_plane,
-    'torus': distance_point_torus,
-    'cylinder': distance_point_cylinder,
-    'cone': distance_point_cone
-}
+distance_threshold = 0
+
+def load_features(dir):
+    with open(dir) as f:
+        features = yaml.load(f, Loader=yaml.FullLoader)
+    return features
 
 def distance_points(A, B):
     AB = B - A
@@ -184,7 +187,7 @@ def distance_point_cone(point, surface):
 
     #if point is below the center of base, return the distance to the circle base line
     #if point is above the apex, return the distance from point to apex
-        return distance_points(P, B)
+    return distance_points(P, B)
 
     #if not, calculate the radius of the circle in this point height 
     r = radius*dist_BP/h
@@ -192,11 +195,19 @@ def distance_point_cone(point, surface):
     #distance from point to the point projected in the revolution axis line minus the current radius
     return distance_points(P, P_p) - r
 
+distance_functions = {
+    'line': distance_point_line,
+    'circle': distance_point_circle,
+    'sphere': distance_point_sphere,
+    'plane': distance_point_plane,
+    'torus': distance_point_torus,
+    'cylinder': distance_point_cylinder,
+    'cone': distance_point_cone
+}
+
 def mount_graph():
     print('Mounting vertex adjacency graph...')
     for face in tqdm(mesh_faces):
-        face = face[0]
-
         vertex_graph[face[0]].append(face[1])
         vertex_graph[face[0]].append(face[2])
 
@@ -212,15 +223,16 @@ def feature_vertex_matching():
     print('Matching features and vertexes...')
     for i, feature in tqdm(enumerate(features)):
         #isso pode ser trocado por dicionario de funcoes
-        if feature['type'] not in distance_functions.keys():
+        feature_type = feature['type'].lower()
+        if feature['type'].lower() not in distance_functions.keys():
             continue
         count = 0
         #isso vai ser trocado por algo mais inteligante (kd-tree, octree ou quadtree)
         for j, vertex in enumerate(mesh_vertexes):
-            ds = distance_functions[feature['type'](vertex, feature)
-            if ds < 0.001:
+            ds = distance_functions[feature['type'].lower()](vertex, feature)
+            if ds < distance_threshold:
                 count += 1
-                do = distance_points(np.array(list(vertex)[0:3]), np.array(list(feature['location'])[0:3])
+                do = distance_points(np.array(list(vertex)[0:3]), np.array(list(feature['location'])[0:3]))
                 #index, distance to surface, distance to origin
                 feature_vertexes_distance[i][j] = (ds, do)
     print(len(feature_vertexes_distance[0]))
@@ -253,7 +265,10 @@ def found_best_connected_component(feature_index, vertexes_dict):
     
     #verifica qual a melhor componente
     components.sort(key=len)
-    return components[-1]
+    if len(components) > 0:
+        return components[-1]
+    else:
+        return []
 
 
 def found_features_connected_component():
@@ -269,7 +284,6 @@ def compute_features_face_indices(features_vertex_indices):
     print('Computing mesh indices...')
     features_faces_indices = [[] for i in range(0, len(features_vertex_indices))]
     for i, face in tqdm(enumerate(mesh_faces)):
-        face = face[0]
         face_features = []
         for vertex in face:
             face_features.append([])
@@ -291,35 +305,41 @@ def compute_features_face_indices(features_vertex_indices):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Mesh Processor.')
-    parser.add_argument('input', type=str, help='input file in .stl or .ply.')
+    parser.add_argument('input', type=str, help='input file in .ply.')
     # parser.add_argument('output', type=str, help='output folder.')
-    # parser.add_argument('--rescale_factor', type = float, default = 1, help='first rescale applied to the point cloud, used to change the measurement unit.')
-    # parser.add_argument('--noise_limit', type = float, default=0.01, help='limit noise applied to the point cloud.')
+    parser.add_argument('--distance_threshold', type = float, default = 1, help='distance threshold to consider a vertex as possible inlier of a feature.')
+    parser.add_argument('--features_yaml', type = str, default='', help='load features from a yaml file.')
     # parser.add_argument('--centralize', type = bool, default=True, help='bool to centralize or not.')
     # parser.add_argument('--align', type = bool, default=True, help='bool to canonical alignment or not.')
     # parser.add_argument('--cube_rescale_factor', type = float, default=1, help='argument to make the point cloud lie in a unit cube, the factor multiplies all the dimensions of result cube.')
     args = vars(parser.parse_args())
 
     inputname = args['input']
-    # outputname = args['output']
-    # rescale_factor = args['rescale_factor']
-    # noise_limit = args['noise_limit']
-    # is_centralize = args['centralize']
-    # is_align = args['align']
-    # cube_rescale_factor = args['cube_rescale_factor']
+    distance_threshold = args['distance_threshold']
+    features_dir = args['features_yaml']
 
-    if inputname[inputname.index('.'):] == '.stl':
-        print('Reading .stl file...')
-        mesh_file = mesh.Mesh.from_file(inputname)
-        mesh_array = mesh_file.vectors
-        exit()
-    elif inputname[inputname.index('.'):] == '.ply':
+    if inputname[inputname.index('.'):] == '.ply':
         print('Reading .ply file...')
         plydata = PlyData.read(inputname)
         mesh_vertexes = plydata['vertex'].data
         vertexes = plydata['vertex'].count
-        mesh_faces = plydata['face'].data
+        mesh_faces_or = plydata['face'].data
+        mesh_faces = np.empty(shape=(mesh_faces_or.shape[0],mesh_faces_or[0][0].shape[0]))
+        for i, mesh in enumerate(mesh_faces_or):
+            face = mesh[0]
+            mesh_faces[i] = face
         faces = plydata['face'].count
+    elif inputname[inputname.index('.'):] == '.obj':
+        print('Reading .obj file...')
+        objdata = pywavefront.Wavefront(inputname, collect_faces=True)
+        mesh_vertexes = np.array(list(objdata.vertices))
+        vertexes = mesh_vertexes.shape[0]
+        mesh_faces = np.empty(shape=(0,3), dtype=np.int32)
+        for mesh in objdata.mesh_list:
+            for face in mesh.faces:
+                face_array = np.array([face], dtype=np.int32)
+                mesh_faces = np.append(mesh_faces, face_array, axis=0)
+        faces = mesh_faces.shape[0]
     else:
         print('{} file type can not be processed.'.format(inputname[inputname.index('.'):]))
         exit()
@@ -329,6 +349,9 @@ if __name__ == '__main__':
 
     vertex_graph = [[] for i in range(0,vertexes)]
     mount_graph()
+
+    features = load_features(features_dir)
+    features = features['curves'] + features['surfaces']
 
     feature_vertexes_distance = [{} for i in range(0,len(features))]
     feature_vertex_matching()
@@ -347,7 +370,7 @@ if __name__ == '__main__':
             face_vertex = mesh_faces[face]
             #print(i)
             vertex_array = []
-            for vertex in face_vertex[0]:
+            for vertex in face_vertex:
                 vertex_vector = list(mesh_vertexes[vertex])
                 #print(vertex_vector)
                 vertex_array.append(vertex_vector[0:3])
@@ -362,13 +385,22 @@ if __name__ == '__main__':
     colors_list = dict(colors.BASE_COLORS, **colors.CSS4_COLORS)
     scale = np.empty((0), dtype=float)
 
-    for fv in features_vectors:
-        print(fv.shape)
+    for i, fv in enumerate(features_vectors):
         collection = mplot3d.art3d.Poly3DCollection(fv)
-        color = list(colors_list.values())[randint(0, len(colors_list.values()))]
+        color_key = list(colors_list.keys())[randint(0, len(colors_list.values()))]
+        color = colors_list[color_key]
         collection.set_facecolor(color)
         axes.add_collection3d(collection)
         scale = np.append(scale, fv.flatten())
+
+        fvi = set(features_vertex_indices[i])
+        print(len(fvi))
+        gt  = set(features[i]['vert_indices'])
+        print(len(gt))
+
+        iou = len((fvi & gt))/len((fvi | gt))
+
+        print(features[i]['type'], fv.shape, color_key, 'IoU: {}'.format(iou))
 
     # Auto scale to the mesh size
     axes.auto_scale_xyz(scale, scale, scale)
