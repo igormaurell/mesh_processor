@@ -161,7 +161,7 @@ def distance_point_cylinder(point, surface):
     radius = surface['radius']
     surface['direction'] = surface['z_axis']
     #simple distance from point to the revolution axis line minus radius
-    return distance_point_line(point, surface) - radius
+    return abs(distance_point_line(point, surface) - radius)
 
 def distance_point_cone(point, surface):
     A = np.array(list(surface['location'])[0:3])
@@ -273,7 +273,7 @@ def found_best_connected_component(feature_index, vertexes_dict):
             ds, do = distances_accumulator
             distances.append((ds/len(component), do/len(component)))
     
-    #verifica qual a melhor componente
+    #verifica qual a melhor componente (usando ds e do)
     if len(components) > 0:
         components.sort(key=len)
         print(feature_index, len(components))
