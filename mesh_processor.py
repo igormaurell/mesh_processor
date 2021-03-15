@@ -15,16 +15,29 @@ from tqdm import tqdm
 import sys
 sys.setrecursionlimit(10000)
 
-#sphere parameters
-center = (0,0,0)
-radius = 56.4078
+# #sphere parameters
+# center = (0,0,0)
+# radius = 56.4078
 
-# sphere = {
+# # sphere = {
+# #     'type': 'sphere',
+# #     'coefficients': None,
+# #     'face_indices': None,
+# #     'location': (0.0, 0.0, 0.0),
+# #     'radius':  56.4078,
+# #     'vert_indices': None,
+# #     'vert_parameters': None,
+# #     'x_axis': (0.0, 0.0, 0.0),
+# #     'y_axis': None,
+# #     'z_axis': (-1.0, 0.0, 0.0), 
+# # }
+
+# sphere1 = {
 #     'type': 'sphere',
 #     'coefficients': None,
 #     'face_indices': None,
 #     'location': (0.0, 0.0, 0.0),
-#     'radius':  56.4078,
+#     'radius':  0.02,
 #     'vert_indices': None,
 #     'vert_parameters': None,
 #     'x_axis': (0.0, 0.0, 0.0),
@@ -32,33 +45,20 @@ radius = 56.4078
 #     'z_axis': (-1.0, 0.0, 0.0), 
 # }
 
-sphere1 = {
-    'type': 'sphere',
-    'coefficients': None,
-    'face_indices': None,
-    'location': (0.0, 0.0, 0.0),
-    'radius':  0.02,
-    'vert_indices': None,
-    'vert_parameters': None,
-    'x_axis': (0.0, 0.0, 0.0),
-    'y_axis': None,
-    'z_axis': (-1.0, 0.0, 0.0), 
-}
+# sphere2 = {
+#     'type': 'sphere',
+#     'coefficients': None,
+#     'face_indices': None,
+#     'location': (-0.038, 0.0, 0.0),
+#     'radius':  0.027,
+#     'vert_indices': None,
+#     'vert_parameters': None,
+#     'x_axis': (0.0, 0.0, 0.0),
+#     'y_axis': None,
+#     'z_axis': (-1.0, 0.0, 0.0), 
+# }
 
-sphere2 = {
-    'type': 'sphere',
-    'coefficients': None,
-    'face_indices': None,
-    'location': (-0.038, 0.0, 0.0),
-    'radius':  0.027,
-    'vert_indices': None,
-    'vert_parameters': None,
-    'x_axis': (0.0, 0.0, 0.0),
-    'y_axis': None,
-    'z_axis': (-1.0, 0.0, 0.0), 
-}
-
-features = [sphere1, sphere2]
+# features = [sphere1, sphere2]
 
 mesh_vertexes = None
 mesh_faces = None
@@ -66,6 +66,16 @@ mesh_faces = None
 vertex_graph = None
 
 feature_vertexes_distance = None
+
+distance_functions = {
+    'line': distance_point_line,
+    'circle': distance_point_circle,
+    'sphere': distance_point_sphere,
+    'plane': distance_point_plane,
+    'torus': distance_point_torus,
+    'cylinder': distance_point_cylinder,
+    'cone': distance_point_cone
+}
 
 def distance_points(A, B):
     AB = B - A
@@ -134,10 +144,10 @@ def distance_point_torus(point, surface):
 
     line = surface
     line['direction'] = surface['z_axis']
+    #projecting the point in the torus plane
     #orthogonal distance to the revolution axis line 
     d = distance_point_line(point, line)
 
-    #projecting the point in the torus plane
     P_p = P - h*n/np.linalg.norm(n, ord=2)
     #getting the direction vector, using center as origin, to the point projected
     v = (P_p - A)/np.linalg.norm((P_p - A), ord=2)
@@ -172,10 +182,7 @@ def distance_point_cone(point, surface):
     #distance from apex to the point projected
     dist_BP = distance_points(P_p, B)
 
-    #if point is below the center of base, return the distance to the circle base 
-    if dist_BP > dist_AP and dist_BP >= h:
-        return distance_point_circle(point, surface)
-    elif dist_AP > dist_BP and dist_AP >= h:
+    #if point is below the center of base, return the distance to the circle base line
     #if point is above the apex, return the distance from point to apex
         return distance_points(P, B)
 
@@ -184,15 +191,6 @@ def distance_point_cone(point, surface):
 
     #distance from point to the point projected in the revolution axis line minus the current radius
     return distance_points(P, P_p) - r
-
-
-def vertex_processor(vertex):
-    point = mesh_vertexes[vertex]
-    d = distance_point_sphere(point)
-
-def face_processor(face):
-    for vertex in face:
-        vertex_processor(vertex)
 
 def mount_graph():
     print('Mounting vertex adjacency graph...')
@@ -214,17 +212,15 @@ def feature_vertex_matching():
     print('Matching features and vertexes...')
     for i, feature in tqdm(enumerate(features)):
         #isso pode ser trocado por dicionario de funcoes
-        if feature['type'] == 'sphere':
-            distance_function = distance_point_sphere
-        elif feature['type'] == 'plane':
-            distance_function = distance_point_plane
+        if feature['type'] not in distance_functions.keys():
+            continue
         count = 0
         #isso vai ser trocado por algo mais inteligante (kd-tree, octree ou quadtree)
         for j, vertex in enumerate(mesh_vertexes):
-            ds = distance_function(vertex, feature)
+            ds = distance_functions[feature['type'](vertex, feature)
             if ds < 0.001:
                 count += 1
-                do = distance_points(vertex, feature['location'])
+                do = distance_points(np.array(list(vertex)[0:3]), np.array(list(feature['location'])[0:3])
                 #index, distance to surface, distance to origin
                 feature_vertexes_distance[i][j] = (ds, do)
     print(len(feature_vertexes_distance[0]))
