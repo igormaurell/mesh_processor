@@ -1,18 +1,20 @@
 import numpy as np
-from plyfile import PlyData, PlyElement
+#from plyfile import PlyData, PlyElement
 
 from mpl_toolkits import mplot3d
 from matplotlib import pyplot, colors
 
 from random import randint
 
-from math import sqrt
+from math import sqrt, acos
 
 import argparse
 
 from tqdm import tqdm
 
-import pywavefront
+#import pywavefront
+
+import pymesh
 
 from statistics import quantiles
 
@@ -21,59 +23,14 @@ import yaml
 import sys
 sys.setrecursionlimit(10000)
 
-# #sphere parameters
-# center = (0,0,0)
-# radius = 56.4078
-
-# # sphere = {
-# #     'type': 'sphere',
-# #     'coefficients': None,
-# #     'face_indices': None,
-# #     'location': (0.0, 0.0, 0.0),
-# #     'radius':  56.4078,
-# #     'vert_indices': None,
-# #     'vert_parameters': None,
-# #     'x_axis': (0.0, 0.0, 0.0),
-# #     'y_axis': None,
-# #     'z_axis': (-1.0, 0.0, 0.0), 
-# # }
-
-# sphere1 = {
-#     'type': 'sphere',
-#     'coefficients': None,
-#     'face_indices': None,
-#     'location': (0.0, 0.0, 0.0),
-#     'radius':  0.02,
-#     'vert_indices': None,
-#     'vert_parameters': None,
-#     'x_axis': (0.0, 0.0, 0.0),
-#     'y_axis': None,
-#     'z_axis': (-1.0, 0.0, 0.0), 
-# }
-
-# sphere2 = {
-#     'type': 'sphere',
-#     'coefficients': None,
-#     'face_indices': None,
-#     'location': (-0.038, 0.0, 0.0),
-#     'radius':  0.027,
-#     'vert_indices': None,
-#     'vert_parameters': None,
-#     'x_axis': (0.0, 0.0, 0.0),
-#     'y_axis': None,
-#     'z_axis': (-1.0, 0.0, 0.0), 
-# }
-
-# features = [sphere1, sphere2]
-
 features = None
 
-mesh_vertexes = None
+mesh_vertices = None
 mesh_faces = None
 
 vertex_graph = None
 
-feature_vertexes_distance = None
+feature_vertices_distance = None
 
 distance_threshold = 0
 
@@ -86,6 +43,9 @@ def distance_points(A, B):
     AB = B - A
     return np.linalg.norm(AB, ord=2)
 
+def normal_deviation(n1, n2):
+    c = np.dot(n1, n2)/(np.linalg.norm(n1, ord=2)*np.linalg.norm(n2, ord=2)) 
+    return acos(c)
 
 def distance_point_line(point, curve):
     A = np.array(list(curve['location'])[0:3])
@@ -237,7 +197,7 @@ def mount_graph():
     print('Done.')
 
 def feature_vertex_matching():
-    print('Matching features and vertexes...')
+    print('Matching features and vertices...')
     for i, feature in tqdm(enumerate(features)):
         #isso pode ser trocado por dicionario de funcoes
         feature_type = feature['type'].lower()
@@ -245,36 +205,36 @@ def feature_vertex_matching():
             continue
         count = 0
         #isso vai ser trocado por algo mais inteligante (kd-tree, octree ou quadtree)
-        for j, vertex in enumerate(mesh_vertexes):
+        for j, vertex in enumerate(mesh_vertices):
             ds = distance_functions[feature['type'].lower()](vertex, feature)
             if ds < distance_threshold:
                 count += 1
                 do = distance_points(np.array(list(vertex)[0:3]), np.array(list(feature['location'])[0:3]))
                 #index, distance to surface, distance to origin
-                feature_vertexes_distance[i][j] = (ds, do)
+                feature_vertices_distance[i][j] = (ds, do)
     print('Done.')
 
-def dfsUtil(vertexes_dict, v, ds, visited, cc, ds_acc):
+def dfsUtil(vertices_dict, v, ds, visited, cc, ds_acc):
     if visited[v] == False:
         cc.append(v)
         ds_acc = (ds_acc[0] + ds[0], ds_acc[1] + ds[1])
         visited[v] = True
         adjacency = vertex_graph[v]
         for a in adjacency:
-            if visited[a] == False and a in vertexes_dict.keys():
-                cc, ds_acc = dfsUtil(vertexes_dict, a, vertexes_dict[a], visited, cc, ds_acc)
+            if visited[a] == False and a in vertices_dict.keys():
+                cc, ds_acc = dfsUtil(vertices_dict, a, vertices_dict[a], visited, cc, ds_acc)
    
     return cc, ds_acc
 
-def found_best_connected_component(feature_index, vertexes_dict):
+def found_best_connected_component(feature_index, vertices_dict):
     visited = [False] * len(vertex_graph)
     components = []
     lengths = []
     distances_surface = []
     distances_origin = []
-    for v, ds in vertexes_dict.items():
+    for v, ds in vertices_dict.items():
         if visited[v] == False:
-            component, distances_accumulator = dfsUtil(vertexes_dict, v, ds, visited, [], (0.0, 0.0))
+            component, distances_accumulator = dfsUtil(vertices_dict, v, ds, visited, [], (0.0, 0.0))
             components.append(component)
             ds, do = distances_accumulator
 
@@ -354,8 +314,8 @@ def found_best_connected_component(feature_index, vertexes_dict):
 def found_features_connected_component():
     print('Founding features connected component...')
     components = []
-    for i, vertexes_dict in tqdm(enumerate(feature_vertexes_distance)):
-        component = found_best_connected_component(i, vertexes_dict)
+    for i, vertices_dict in tqdm(enumerate(feature_vertices_distance)):
+        component = found_best_connected_component(i, vertices_dict)
         components.append(component)
     return components
     print('Done.')
@@ -385,7 +345,7 @@ def compute_features_face_indices(features_vertex_indices):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Mesh Processor.')
-    parser.add_argument('input', type=str, help='input file in .ply.')
+    parser.add_argument('input', type=str, help='input file in .obj, .off, .ply, .stl, .mesh (MEDIT), .msh (Gmsh) and .node/.face/.ele (Tetgen) formats.')
     # parser.add_argument('output', type=str, help='output folder.')
     parser.add_argument('--distance_threshold', type = float, default = 0.001, help='distance threshold to consider a vertex as possible inlier of a feature.')
     parser.add_argument('--features_yaml', type = str, default='', help='load features from a yaml file.')
@@ -398,46 +358,26 @@ if __name__ == '__main__':
     distance_threshold = args['distance_threshold']
     features_dir = args['features_yaml']
 
-    if inputname[inputname.index('.'):] == '.ply':
-        print('Reading .ply file...')
-        plydata = PlyData.read(inputname)
-        mesh_vertexes = plydata['vertex'].data
-        vertexes = plydata['vertex'].count
-        mesh_faces_or = plydata['face'].data
-        mesh_faces = np.empty(shape=(mesh_faces_or.shape[0],mesh_faces_or[0][0].shape[0]))
-        for i, mesh in enumerate(mesh_faces_or):
-            face = mesh[0]
-            mesh_faces[i] = face
-        faces = plydata['face'].count
-        print(plydata['normal'])
-        exit()
-    elif inputname[inputname.index('.'):] == '.obj':
-        print('Reading .obj file...')
-        objdata = pywavefront.Wavefront(inputname, collect_faces=True)
-        mesh_vertexes = np.array(list(objdata.vertices))
-        vertexes = mesh_vertexes.shape[0]
-        mesh_normals = np.array(list(objdata.normals))
-        mesh_faces = np.empty(shape=(0,3), dtype=np.int32)
-        for mesh in objdata.mesh_list:
-            for face in mesh.faces:
-                face_array = np.array([face], dtype=np.int32)
-                mesh_faces = np.append(mesh_faces, face_array, axis=0)
-        faces = mesh_faces.shape[0]
-        exit()
-    else:
-        print('{} file type can not be processed.'.format(inputname[inputname.index('.'):]))
-        exit()
+    print('Reading {} file...'.format(inputname[inputname.index('.'):]))
+    mesh = pymesh.load_mesh(inputname)
+    mesh.add_attribute('vertex_normal')
+    mesh_vertices = mesh.vertices
+    n_vertices = mesh.num_vertices
+    vertex_normal = mesh.get_attribute('vertex_normal')
+    vertex_normal = np.reshape(vertex_normal, (int(vertex_normal.shape[0]/3), 3))
+    mesh_faces = mesh.faces
+    n_faces = mesh.num_faces
 
-    print('{} faces and {} vertexes.'.format(faces, vertexes))
+    print('{} faces and {} vertices.'.format(n_faces, n_vertices))
     print('Done.')
 
-    vertex_graph = [[] for i in range(0,vertexes)]
+    vertex_graph = [[] for i in range(0,n_vertices)]
     mount_graph()
 
     features = load_features(features_dir)
     features = features['curves'] + features['surfaces']
 
-    feature_vertexes_distance = [{} for i in range(0,len(features))]
+    feature_vertices_distance = [{} for i in range(0,len(features))]
     feature_vertex_matching()
 
     features_vertex_indices = found_features_connected_component()
@@ -455,7 +395,7 @@ if __name__ == '__main__':
             #print(i)
             vertex_array = []
             for vertex in face_vertex:
-                vertex_vector = list(mesh_vertexes[vertex])
+                vertex_vector = list(mesh_vertices[vertex])
                 #print(vertex_vector)
                 vertex_array.append(vertex_vector[0:3])
             face_array.append(vertex_array)
