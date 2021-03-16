@@ -14,6 +14,8 @@ from tqdm import tqdm
 
 import pywavefront
 
+from statistics import quantiles
+
 import yaml
 
 import sys
@@ -118,7 +120,7 @@ def distance_point_sphere(point, surface):
     P = np.array(list(point)[0:3])
     radius = surface['radius']
     #simple, distance from point to the center minus the sphere radius
-    return distance_points(P, A) - radius
+    return abs(distance_points(P, A) - radius)
 
 
 def distance_point_plane(point, surface):
@@ -154,7 +156,7 @@ def distance_point_torus(point, surface):
     #calculating the center of circle in the direction of the input point
     B = (min_radius + radius)*v + A
 
-    return distance_points(B, P) - radius
+    return abs(distance_points(B, P) - radius)
 
 
 def distance_point_cylinder(point, surface):
@@ -207,7 +209,7 @@ def distance_point_cone(point, surface):
     r = radius*dist_BP/h
 
     #distance from point to the point projected in the revolution axis line minus the current radius
-    return distance_points(P, P_p) - r
+    return abs(distance_points(P, P_p) - r)
 
 distance_functions = {
     'line': distance_point_line,
@@ -218,6 +220,8 @@ distance_functions = {
     'cylinder': distance_point_cylinder,
     'cone': distance_point_cone
 }
+
+infinity_geometries = ['line', 'plane', 'cylinder']
 
 def mount_graph():
     print('Mounting vertex adjacency graph...')
@@ -265,19 +269,84 @@ def dfsUtil(vertexes_dict, v, ds, visited, cc, ds_acc):
 def found_best_connected_component(feature_index, vertexes_dict):
     visited = [False] * len(vertex_graph)
     components = []
-    distances = []
+    lengths = []
+    distances_surface = []
+    distances_origin = []
     for v, ds in vertexes_dict.items():
         if visited[v] == False:
             component, distances_accumulator = dfsUtil(vertexes_dict, v, ds, visited, [], (0.0, 0.0))
             components.append(component)
             ds, do = distances_accumulator
-            distances.append((ds/len(component), do/len(component)))
+
+            lengths.append(len(component))
+            distances_surface.append(ds/len(component))
+            distances_origin.append(do/len(component))
     
-    #verifica qual a melhor componente (usando ds e do)
-    if len(components) > 0:
-        components.sort(key=len)
-        print(feature_index, len(components))
-        return components[-1]
+    #qual componente deve ser selecionada? depende do tipo de feature? usamos ds, do ou o tamanho da componente?
+    if len(components) > 1:
+        print('\n')
+        print(feature_index, 'em processo de selecao.')
+        print('Lengths:', lengths)
+        print('DS:', distances_surface)
+        print('DO:', distances_origin)
+        lower_ql = quantiles(lengths)[0]
+        print('Lower QL:', lower_ql)
+        higher_qds = quantiles(distances_surface)[-1]
+        print('Higher QDS:', higher_qds)
+
+        mask = [0 for i in range(0, len(components))]
+        for i, comp in enumerate(components):
+            if lengths[i] <= lower_ql:
+                mask[i]+= 1
+            if distances_surface[i] >= higher_qds:
+                mask[i]+= 1
+        
+        print('Mask:', mask)
+
+        value_to_process = 0
+        if mask.count(0) == 0:
+            print('Todos sao outliers.')
+            if mask.count(1) == 0:
+                print('Pior caso')
+                #worst case, but, all the components must be tested
+                value_to_process = 2
+            elif mask.count(1) == 1:
+                print('Um se salvou')
+                #exists one that is an outlier just in one metric
+                return components[mask.index(1)]
+            else:
+                print('Alguns se salvaram')
+                #exists more than one that is an outliers just in one metric
+                value_to_process = 1
+        elif mask.count(0) == 1:
+            print('Um nao eh outlier')
+            #exists just one that is not an outlier in both metrics
+            return components[mask.index(0)]
+        
+        #here, one of the remaining components must be choosen
+        #infinity geometries have a better comparison using distance from origin
+        if features[feature_index]['type'].lower() in infinity_geometries:
+            best_do = float('inf')
+            best_index = 0
+            for i, do in enumerate(distances_origin):
+                if mask[i] == value_to_process and do < best_do:
+                    best_do = do
+                    best_index = i
+            print('Infinity.')
+            print(best_index, best_do)
+        #in infinity geometries, the bigger component is used
+        else:
+            best_length = float('inf')
+            best_index = 0
+            for i, l in enumerate(lengths):
+                if mask[i] == value_to_process and l < best_length:
+                    best_length = l
+                    best_index = i
+            print(best_index, best_length)
+        
+        return components[best_index]
+    elif len(components) == 1:
+        return components[0]
     else:
         return []
 
@@ -318,7 +387,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Mesh Processor.')
     parser.add_argument('input', type=str, help='input file in .ply.')
     # parser.add_argument('output', type=str, help='output folder.')
-    parser.add_argument('--distance_threshold', type = float, default = 0.1, help='distance threshold to consider a vertex as possible inlier of a feature.')
+    parser.add_argument('--distance_threshold', type = float, default = 0.001, help='distance threshold to consider a vertex as possible inlier of a feature.')
     parser.add_argument('--features_yaml', type = str, default='', help='load features from a yaml file.')
     # parser.add_argument('--centralize', type = bool, default=True, help='bool to centralize or not.')
     # parser.add_argument('--align', type = bool, default=True, help='bool to canonical alignment or not.')
@@ -340,17 +409,21 @@ if __name__ == '__main__':
             face = mesh[0]
             mesh_faces[i] = face
         faces = plydata['face'].count
+        print(plydata['normal'])
+        exit()
     elif inputname[inputname.index('.'):] == '.obj':
         print('Reading .obj file...')
         objdata = pywavefront.Wavefront(inputname, collect_faces=True)
         mesh_vertexes = np.array(list(objdata.vertices))
         vertexes = mesh_vertexes.shape[0]
+        mesh_normals = np.array(list(objdata.normals))
         mesh_faces = np.empty(shape=(0,3), dtype=np.int32)
         for mesh in objdata.mesh_list:
             for face in mesh.faces:
                 face_array = np.array([face], dtype=np.int32)
                 mesh_faces = np.append(mesh_faces, face_array, axis=0)
         faces = mesh_faces.shape[0]
+        exit()
     else:
         print('{} file type can not be processed.'.format(inputname[inputname.index('.'):]))
         exit()
@@ -398,7 +471,7 @@ if __name__ == '__main__':
 
     for i, fv in enumerate(features_vectors):
         collection = mplot3d.art3d.Poly3DCollection(fv)
-        color_key = list(colors_list.keys())[randint(0, len(colors_list.values()))]
+        color_key = list(colors_list.keys())[randint(0, len(colors_list.keys())-1)]
         color = colors_list[color_key]
         collection.set_facecolor(color)
         axes.add_collection3d(collection)
@@ -411,7 +484,7 @@ if __name__ == '__main__':
 
         iou = len((fvi & gt))/len((fvi | gt))
 
-        print(features[i]['type'], fv.shape, color_key, 'IoU: {}'.format(iou))
+        print(i, features[i]['type'], fv.shape, color_key, 'IoU: {}'.format(iou))
 
     # Auto scale to the mesh size
     axes.auto_scale_xyz(scale, scale, scale)
