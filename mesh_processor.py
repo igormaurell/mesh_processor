@@ -36,10 +36,16 @@ feature_vertices_deviation = None
 distance_threshold = 0
 angle_threshold = 0
 
+possible_connected_components = []
+
 def load_features(dir):
     with open(dir) as f:
         features = yaml.load(f, Loader=yaml.FullLoader)
     return features
+
+'''
+- Distance and angle deviation functions
+'''
 
 def distance_points(A, B):
     AB = B - A
@@ -48,12 +54,6 @@ def distance_points(A, B):
 def angle_vectors(n1, n2):
     c = np.dot(n1, n2)/(np.linalg.norm(n1, ord=2)*np.linalg.norm(n2, ord=2)) 
     return acos(c)
-
-# def angle_normals(n1, n2):
-#     angle = angle_vectors(n1, n2)
-#     if angle > pi/2:
-#         angle = pi - angle
-#     return angle
         
 def deviation_point_line(point, normal, curve):
     A = np.array(list(curve['location'])[0:3])
@@ -244,6 +244,10 @@ min_points = {
 
 infinity_geometries = ['line', 'plane', 'cylinder']
 
+'''
+- Graph part
+'''
+
 def mount_graph():
     print('Mounting vertex adjacency graph...')
     for face in tqdm(mesh_faces):
@@ -287,7 +291,7 @@ def dfsUtil(vertices_dict, v, info, visited, cc, info_acc):
    
     return cc, info_acc
 
-def found_best_connected_component(feature_index, vertices_dict):
+def found_possible_connected_components(feature_index, vertices_dict):
     visited = [False] * len(vertex_graph)
     components = []
     lengths = []
@@ -306,7 +310,7 @@ def found_best_connected_component(feature_index, vertices_dict):
                 distances_surface.append(ds_acc/len(component))
                 angles.append(angle_acc/len(component))
                 distances_origin.append(do_acc/len(component))
-
+    
     #qual componente deve ser selecionada? depende do tipo de feature? usamos ds, do ou o tamanho da componente?
     if len(components) > 1:
         print('\n')
@@ -379,11 +383,13 @@ def found_best_connected_component(feature_index, vertices_dict):
         return []
 
 
+    
+
 def found_features_connected_component():
     print('Founding features connected component...')
     components = []
     for i, vertices_dict in tqdm(enumerate(feature_vertices_deviation)):
-        component = found_best_connected_component(i, vertices_dict)
+        component = found_possible_connected_components(i, vertices_dict)
         components.append(component)
     return components
     print('Done.')
@@ -504,3 +510,16 @@ if __name__ == '__main__':
 
     # Show the plot to the screen
     pyplot.show()
+
+
+
+
+
+#  component_indices = []
+#     for c in components:
+#         c_set = set(c)
+#         if c_set in possible_connected_components:
+#             component_indices.append(possible_connected_components.index(c_set))
+#         else:
+#             possible_connected_components.append(c_set)
+#             component_indices.append(len(possible_connected_components) - 1)
